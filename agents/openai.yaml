@@ -1,0 +1,4 @@
+interface:
+  display_name: "平面一键CAD"
+  short_description: "从住宅营销户型图重建可编辑的毫米制分层平面，核对尺寸、门窗和家具。"
+  default_prompt: "使用 $plan-to-cad 把这张住宅营销彩平还原成一张可编辑的分层 CAD。"

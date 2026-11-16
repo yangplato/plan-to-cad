@@ -1,0 +1,8 @@
+# Versions used for the V1 native-DWG and review checks (Python 3.12).
+ezdxf==1.4.5
+numpy==2.5.4
+Pillow==13.0.0
+Shapely==2.2.0
+scipy==1.18.1
+PyMuPDF==2.1
+matplotlib==3.11.2

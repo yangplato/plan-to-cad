@@ -1,0 +1,274 @@
+{
+  "source_to_mm": [
+    20,
+    0,
+    0,
+    -20,
+    -400,
+    4400
+  ],
+  "walls": [
+    {
+      "id": "north",
+      "a": [
+        20,
+        20
+      ],
+      "b": [
+        300,
+        20
+      ],
+      "width_mm": 200,
+      "material": "bearing",
+      "proof_line": [
+        [
+          140,
+          20
+        ],
+        [
+          285,
+          20
+        ]
+      ]
+    },
+    {
+      "id": "west",
+      "a": [
+        20,
+        20
+      ],
+      "b": [
+        20,
+        220
+      ],
+      "width_mm": 200,
+      "material": "bearing"
+    },
+    {
+      "id": "east",
+      "a": [
+        300,
+        20
+      ],
+      "b": [
+        300,
+        220
+      ],
+      "width_mm": 200,
+      "material": "bearing"
+    },
+    {
+      "id": "south",
+      "a": [
+        20,
+        220
+      ],
+      "b": [
+        300,
+        220
+      ],
+      "width_mm": 200,
+      "material": "partition"
+    },
+    {
+      "id": "divider",
+      "a": [
+        170,
+        20
+      ],
+      "b": [
+        170,
+        220
+      ],
+      "width_mm": 120,
+      "material": "partition"
+    }
+  ],
+  "rooms": [
+    {
+      "id": "room_w",
+      "free_polygons": [
+        [
+          [
+            55,
+            80
+          ],
+          [
+            125,
+            80
+          ],
+          [
+            125,
+            145
+          ],
+          [
+            55,
+            145
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "room_e",
+      "free_points": [
+        [
+          235,
+          100
+        ]
+      ]
+    }
+  ],
+  "openings": [
+    {
+      "id": "D-entry",
+      "hosts": [
+        "south"
+      ],
+      "a": [
+        60,
+        220
+      ],
+      "b": [
+        115,
+        220
+      ],
+      "kind": "swing",
+      "toward": [
+        90,
+        170
+      ],
+      "leaves": [
+        {
+          "hinge": "a",
+          "share": 0.65
+        },
+        {
+          "hinge": "b",
+          "share": 0.35
+        }
+      ],
+      "connects": [
+        "outside",
+        "room_w"
+      ]
+    },
+    {
+      "id": "D-room",
+      "hosts": [
+        "divider"
+      ],
+      "a": [
+        170,
+        125
+      ],
+      "b": [
+        170,
+        165
+      ],
+      "kind": "swing",
+      "toward": [
+        210,
+        142
+      ],
+      "leaves": [
+        {
+          "hinge": "b",
+          "share": 1
+        }
+      ],
+      "connects": [
+        "room_w",
+        "room_e"
+      ]
+    },
+    {
+      "id": "glass",
+      "hosts": [
+        "north"
+      ],
+      "a": [
+        60,
+        20
+      ],
+      "b": [
+        130,
+        20
+      ],
+      "kind": "window",
+      "symbol_depth_mm": 140,
+      "lines_mm": [
+        -70,
+        -22,
+        22,
+        70
+      ]
+    },
+    {
+      "id": "slider",
+      "hosts": [
+        "south"
+      ],
+      "a": [
+        188,
+        220
+      ],
+      "b": [
+        258,
+        220
+      ],
+      "kind": "sliding",
+      "tracks_mm": [
+        -16,
+        16
+      ],
+      "panels": [
+        {
+          "start": 0,
+          "end": 0.53,
+          "track": 0,
+          "arrow": 1
+        },
+        {
+          "start": 0.47,
+          "end": 1,
+          "track": 1,
+          "arrow": -1
+        }
+      ],
+      "connects": [
+        "outside",
+        "room_e"
+      ]
+    }
+  ],
+  "dimension_chains": [
+    {
+      "id": "top-chain",
+      "axis": "x",
+      "ticks_px": [
+        20,
+        170,
+        300
+      ],
+      "line_px": 6,
+      "witness_px": 17,
+      "values_mm": [
+        3000,
+        2600
+      ]
+    },
+    {
+      "id": "left-chain",
+      "axis": "y",
+      "ticks_px": [
+        20,
+        220
+      ],
+      "line_px": 5,
+      "witness_px": 18,
+      "values_mm": [
+        4000
+      ]
+    }
+  ]
+}
