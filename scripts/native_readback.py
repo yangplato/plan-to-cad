@@ -39,7 +39,7 @@ def console_path(override):
     return options[0].resolve()
 
 
-def capture(source, destination, console, layers):
+def capture(source, destination, console, layers, *, reference=None):
     if destination.exists() or not destination.parent.is_dir():
         raise ValueError("Choose a new work folder inside an existing directory")
     suffix = source.suffix.lower()
@@ -49,6 +49,15 @@ def capture(source, destination, console, layers):
         raise ValueError("Use two distinct layer names")
     with TemporaryDirectory(prefix="cad-readback-") as location:
         job = Path(location)
+        if reference:
+            name = reference["filename"]
+            image = (source.parent/name).resolve()
+            if Path(name).is_absolute() or ".." in Path(name).parts or source.parent.resolve() not in image.parents:
+                raise ValueError("Image reference must be inside the drawing directory")
+            if not image.is_file() or digest(image)!=reference["source_sha256"]:
+                raise ValueError("Image reference missing or changed beside the drawing")
+            (job/name).parent.mkdir(parents=True,exist_ok=True)
+            shutil.copyfile(image,job/name)
 
         def run(tag, drawing, commands, outputs):
             script = job / (tag + ".scr")
@@ -75,6 +84,12 @@ def capture(source, destination, console, layers):
         frozen_hash = digest(dwg)
         run("reopen", dwg, [export("readback.dxf")], ["readback.dxf"])
         outputs = ["plan.dwg", "readback.dxf"]
+        if reference:
+            saved = ezdxf.readfile(job/"readback.dxf")
+            paths = [e.image_def.dxf.filename.replace("\\","/") for e in saved.modelspace().query("IMAGE") if e.image_def]
+            if paths.count(name)!=1:
+                raise ValueError("Reopened drawing did not retain its source image path")
+            outputs.append(name)
         if layers:
             doc = ezdxf.readfile(job / "readback.dxf")
             if not all(layer in doc.layers for layer in layers):
@@ -108,6 +123,7 @@ def capture(source, destination, console, layers):
             ready = Path(shipping) / "complete"
             ready.mkdir()
             for name in outputs:
+                (ready/name).parent.mkdir(parents=True,exist_ok=True)
                 shutil.copyfile(job / name, ready / name)
             (ready / "capture.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
             if destination.exists():

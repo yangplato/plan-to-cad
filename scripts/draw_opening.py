@@ -57,6 +57,8 @@ def draw_opening(msp, item, door_layer="门", window_layer="窗", ancillary_laye
                 # Set both arc and leaf on the chosen opening face (blue-frame convention).
                 face = {"approach":-1,"receiving":1}[leaf.get("hinge_face",item.get("hinge_face","approach"))]
             pivot = jamb + along * inset + into * (face * depth / 2)
+            if "actual_pivot_mm" in leaf:
+                pivot = Vec2(leaf["actual_pivot_mm"])
             tip = pivot + into * radius
             drawn.append(path([pivot, tip, tip + along * thickness, pivot + along * thickness], True))
             a0, a1 = along.angle_deg, into.angle_deg
@@ -100,6 +102,7 @@ def draw_opening(msp, item, door_layer="门", window_layer="窗", ancillary_laye
             raise ValueError(f"{item['id']}: verify frame and parallel lines")
         for offset in offsets:
             drawn.append(path([start+left*offset,end+left*offset]))
+    low,high = item.get("frame_face_offsets_mm",[-depth/2,depth/2])
     for point in (start,end):
-        drawn.append(path([point-left*depth/2,point+left*depth/2]))
+        drawn.append(path([point+left*low,point+left*high]))
     return drawn

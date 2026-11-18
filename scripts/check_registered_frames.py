@@ -239,6 +239,13 @@ def frame_metrics(lines, arcs, width, along_tol, normal_tol, low, high, wall, am
                       and (len(tracks)<2 or (c[1] <= min(r[2] for r in tracks)+EDGE and
                                              c[2] >= max(r[2] for r in tracks)-EDGE))]
         caps_at_end.append(sorted(candidates,key=lambda c:abs(c[0]-end))[:1])
+    # When real wall faces close a straight frame, a duplicate symbolic cap
+    # would draw the same junction twice. Accept only actual full contact.
+    wall_ends = []
+    for end in (0,width):
+        ys = [r[2] for r in tracks]
+        wall_ends.append(bool(len(ys)>=2 and max(ys)-min(ys)>EDGE and
+            wall.boundary.buffer(EDGE).covers(LineString([(end,min(ys)),(end,max(ys))]))))
     swing = []
     for arc in arcs:
         x,y = xy(arc.pivot)
@@ -275,9 +282,52 @@ def frame_metrics(lines, arcs, width, along_tol, normal_tol, low, high, wall, am
     def row(v):
         return dict(from_a_mm=round(v[0],2), to_mm=round(v[1],2), offset_mm=round(v[2],2), native_refs=v[3])
     return dict(tracks=[row(r) for r in tracks], panels=panels, staggered_indices=sorted(set(staggered)),
-                end_caps=[c[0] if c else None for c in caps_at_end], swings=swing, occlusion=occlusion,
+                end_caps=[c[0] if c else None for c in caps_at_end], wall_ends=wall_ends, swings=swing, occlusion=occlusion,
                 local_strokes=len(observed), partial_intervals=len(partial), observed_refs=observed,
                 unclassified_stroke_refs=sorted(set(observed)-simple_refs))
+
+
+def measure_joined_rail(metric, lines, width, tol, low, high, wall=None):
+    """Recognize an actual 90-degree continuation at each offset track's own vertex."""
+    tracks = []
+    turns = []
+    for s in lines:
+        a,b = sorted((s.start,s.end),key=lambda p:p.real)
+        if abs(b.imag-a.imag)>EDGE or b.real-a.real < width*.55 or not low<=a.imag<=high:
+            continue
+        if any(abs(p.real-x)>tol+abs(p.imag) for p,x in [(a,0),(b,width)]):
+            continue
+        corners=[]
+        for point in (a,b):
+            linked = any(abs(t.start.real-t.end.real)<=EDGE and
+                         min(abs(t.start-point),abs(t.end-point))<=EDGE and
+                         abs(t.end-t.start)>max(2*abs(point.imag)+tol,2*tol)
+                         for t in lines)
+            corners.append(linked)
+        tracks.append(dict(from_a_mm=a.real,to_mm=b.real,offset_mm=a.imag,native_refs=[s.ref]))
+        turns.append(corners)
+    if len({round(t["offset_mm"],3) for t in tracks})<2:
+        return
+    joined=[all(t[i] for t in turns) for i in (0,1)]
+    if not any(joined):
+        return
+    # At a straight terminal all tracks must touch the same real cap.
+    for i in (0,1):
+        if joined[i]:
+            continue
+        x = width if i else 0
+        ys = [t["offset_mm"] for t in tracks]
+        if (wall is not None and all(abs(t["to_mm" if i else "from_a_mm"]-x)<=EDGE for t in tracks)
+                and wall.boundary.buffer(EDGE).covers(LineString([(x,min(ys)),(x,max(ys))]))):
+            continue
+        if not any(abs(l.start.real-l.end.real)<=EDGE and abs(l.start.real-x)<=tol
+                   and all(abs(t["to_mm" if i else "from_a_mm"]-l.start.real)<=EDGE for t in tracks)
+                   and min(l.start.imag,l.end.imag)<=min(ys)+EDGE
+                   and max(l.start.imag,l.end.imag)>=max(ys)-EDGE for l in lines):
+            return
+    metric["end_turns"]=joined
+    metric["tracks"]=tracks
+    metric["joined_rail"]=True
 
 
 def snapped_axis(a, b, strokes, along, across):
@@ -297,6 +347,8 @@ def snapped_axis(a, b, strokes, along, across):
 
 
 def classify(m, along_tol, width):
+    if m.get("joined_rail"):
+        return "parallel_frame"
     tracks, panels = m["tracks"], m["panels"]
     tied = [p for p in panels if any(p["bottom"]-EDGE <= t["offset_mm"] <= p["top"]+EDGE for t in tracks)]
     cursor = 0
@@ -314,7 +366,8 @@ def classify(m, along_tol, width):
     if (len(tracks)>=2 and len(tied)>=2 and len(m["staggered_indices"])>=2 and
             cursor>=width-along_tol and all(m["end_caps"])):
         return "sliding"
-    if len(tracks)>=2 and all(m["end_caps"]) and not panels:
+    closed_ends = [bool(cap) or wall for cap,wall in zip(m["end_caps"],m.get("wall_ends",[False,False]))]
+    if len(tracks)>=2 and all(closed_ends) and not panels:
         return "parallel_frame"
     return None
 
@@ -439,6 +492,8 @@ def audit(doc, registration, observations, band_px=None, graphics=None):
                 neighbors[other]=sorted((p.real,q.real))
         metrics = {role:frame_metrics(lines[role],arcs[role],width,tol,ntol,low,high,wall,neighbors.values())
                    for role in ("door","window","ancillary")}
+        if kind=="rail":
+            measure_joined_rail(metrics["ancillary"], lines["ancillary"], width, tol, low, high, wall)
         detected = {role:classify(m,tol,width) for role,m in metrics.items()}
         diag = dict(**base,span_mm=round(width,2),uncertainty_px=px,tolerance_mm=[round(tol,2),round(ntol,2)],
                     inspection_band_from_axis_mm=[round(low,2),round(high,2)],
@@ -482,7 +537,7 @@ def audit(doc, registration, observations, band_px=None, graphics=None):
                         external.append((a1.imag,s.ref))
             levels = sorted(v[0] for v in external)
             contacts.append(dict(wall=has_wall,adjacent_strokes=[v[1] for v in external]))
-            frame_end = bool(levels and levels[-1]-levels[0]>EDGE)
+            frame_end = bool(levels and levels[-1]-levels[0]>EDGE) or (kind=="rail" and metrics["ancillary"].get("end_turns",[False,False])[i])
             if expected=="wall" and not has_wall:
                 (pending if wall_issues or unresolved else fail).append(f"端点 {'ab'[i]} 未接登记墙材")
             elif expected=="frame" and not frame_end:

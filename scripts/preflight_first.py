@@ -10,6 +10,7 @@ import subprocess
 import sys
 import ezdxf
 from native_readback import capture,console_path,digest
+from drafting_version import version
 from first_readback import audit as native_checks
 from render_source_overlay import draw
 from recheck_source_marks import audit as marks_audit, contact_sheet
@@ -33,7 +34,8 @@ def main(a):
     else:
         for attempt in range(2):
             try:
-                capture(src,folder,console,layers);break
+                ref = ledger.get('source_reference') if version(ledger)>=(1,5) else None
+                capture(src,folder,console,layers,reference=ref);break
             except (RuntimeError,subprocess.TimeoutExpired):
                 if attempt:raise
     proof=folder/'readback.dxf';doc=ezdxf.readfile(proof)

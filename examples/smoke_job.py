@@ -3,6 +3,10 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import sys
+
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"scripts"))
+from drafting_version import RELEASE
 
 from PIL import Image, ImageDraw
 
@@ -12,7 +16,7 @@ def make_job(out):
         raise ValueError("Choose an empty job directory")
     out.mkdir(parents=True, exist_ok=True)
     scene = json.loads(Path(__file__).with_name("dimension-grid.json").read_text(encoding="utf-8"))
-    scene["drafting_version"] = "1.3.0"
+    scene["drafting_version"] = RELEASE
     for wall in scene["walls"]:
         if wall["id"] == "column":
             wall["element_kind"] = "column"
@@ -54,8 +58,9 @@ def make_job(out):
          "library_block":"LV02_双边框长茶几","library_front_vector":[0,-1],
          "back_px":[101,80],"toward_px":[101,94],"width_mm":760,"depth_mm":560,
          "freestanding_basis":"free on four sides"},
-        {"id":"cabinet","type":"hosted","family":"cabinet","role":"fixed","host":"east",
-         "side":"-x","near_px":[295,164],"width_mm":700,"depth_mm":400},
+        {"id":"cabinet","type":"library","function":"固定柜","role":"fixed",
+         "library_block":"SC04_双开门衣柜","library_front_vector":[0,-1],
+         "back_px":[295,164],"toward_px":[275,164],"width_mm":700,"depth_mm":400},
     ]
     draw.rectangle((82,80,120,108),outline="#a4815c")
     draw.rectangle((275,146.5,295,181.5),outline="#746858")

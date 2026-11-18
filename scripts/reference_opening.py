@@ -56,6 +56,45 @@ def draw(msp, item, ref, root, layer):
             raise ValueError(f"{item['id']}: select a clean, plan-view line block ({e.dxftype()})")
         fresh=e.copy();fresh.transform(matrix);fresh.dxf.layer=layer;fresh.dxf.color=256
         fresh.dxf.discard('true_color');fresh.dxf.linetype="BYLAYER";fresh.dxf.lineweight=-1
-        msp.add_entity(fresh);drawn.append(fresh)
+        drawn.append(fresh)
     if not drawn:raise ValueError(f"{item['id']}: reference has no editable line geometry")
+    measured = [leaf["jamb_face_range_mm"] for leaf in item.get("leaves",[]) if "jamb_face_range_mm" in leaf]
+    if measured:
+        from shapely.geometry import LineString
+        from ezdxf.path import make_path
+        normal = w.normalize().orthogonal()
+        axis = w.normalize()
+        offsets = []
+        for leaf,limits in zip(item["leaves"],measured):
+            jamb = Vec2(item[leaf["hinge"]])
+            # Probe a hair inside the cut to locate the physical mounting strip.
+            station = jamb + (axis if leaf["hinge"]=="a" else -axis)*.001
+            section=LineString([station-normal*1500,station+normal*1500])
+            contacts = []
+            for entity in drawn:
+                if entity.dxftype()=="ARC":
+                    continue
+                points=[(v.x,v.y) for v in make_path(entity).flattening(.05)]
+                if len(points)<2:
+                    continue
+                hit=section.intersection(LineString(points))
+                for piece in getattr(hit,"geoms",[hit]):
+                    contacts.extend((Vec2(v)-jamb).dot(normal) for v in piece.coords)
+            if len(contacts)<2:
+                raise ValueError(f"{item['id']}: register both physical jamb casing faces")
+            lo,hi=sorted((Vec2(p)-jamb).dot(normal) for p in limits)
+            # Preserve the side on which the block was originally placed and fit
+            # the mounting strip between the two locally measured host faces.
+            shift_lo,shift_hi=lo-min(contacts), hi-max(contacts)
+            if shift_lo > shift_hi+.05:
+                raise ValueError(f"{item['id']}: the mounted casing exceeds local pier thickness")
+            offsets.append((shift_lo,shift_hi))
+        lo,hi=max(o[0] for o in offsets), min(o[1] for o in offsets)
+        if lo>hi+.05:
+            raise ValueError(f"{item['id']}: this block cannot fit both jambs; build the leaves separately")
+        shift=normal*max(lo,min(0.,hi))
+        for entity in drawn:
+            entity.translate(shift.x,shift.y,0)
+    for entity in drawn:
+        msp.add_entity(entity)
     return drawn

@@ -122,7 +122,44 @@ def rounding_evidence(doc, ledger, record, cache):
     return missing
 
 
-def verify(doc, ledger, record, findings, scan):
+def private_room(name, use):
+    identity = (str(name)+" "+str(use)).casefold()
+    return any(key in identity for key in ("卧","卫生间","洗手间","主卫","客卫","公卫","次卫","套卫","卫浴",
+               "厕所","浴室","儿童房","老人房","客房","bedroom","bathroom","toilet","ensuite","restroom"))
+
+
+def open_axes(room, clear_regions, missing):
+    """Accept a direction without a second face only with a checked, source-located open region."""
+    sides = room.get("open_sides", {})
+    if not isinstance(sides, dict):
+        missing.add(f"{room['id']}/开敞方向记录无效")
+        return []
+    axes = []
+    for axis, side in sides.items():
+        tag = f"{room['id']}/{axis}向开敞"
+        if not isinstance(side, dict) or axis not in ("x","y"):
+            missing.add(tag+"/需明确方向与边界")
+            continue
+        use = room.get("room_use", "")
+        if private_room(room['id'],use):
+            missing.add(tag+"/卧室或卫生间需检查围护与门洞")
+            continue
+        if not isinstance(use,str) or not use.strip() or any(
+                not isinstance(side.get(k),str) or not side[k].strip()
+                for k in ("boundary","source_evidence","adjacent","use_check")):
+            missing.add(tag+"/缺空间用途、边缘位置、相邻关系、源图或使用判断")
+            continue
+        if side.get("context") not in ("perimeter","continuous_interior"):
+            missing.add(tag+"/说明外缘或有图证的室内连续空间")
+            continue
+        if clear_regions.get(side.get("clear_region_id")) != (room['id'], axis):
+            missing.add(tag+"/缺同版同房间同方向的净区实查")
+            continue
+        axes.append(Vec2(1,0) if axis=="x" else Vec2(0,1))
+    return axes
+
+
+def verify(doc, ledger, record, findings, scan, clear_regions=None):
     """Return missing/invalid evidence; previously dispositioned observations link to review issues."""
     missing = set()
     rows = record.get("rooms", [])
@@ -166,6 +203,17 @@ def verify(doc, ledger, record, findings, scan):
             axes.append(v.normalize())
             if abs(v.magnitude-round(v.magnitude))>EPS and span.get("issue") not in findings:
                 missing.add(tag+"/小数须登记处理依据")
+        if version(ledger)>=(1,5):
+            use = r.get("room_use")
+            enclosure = r.get("enclosure")
+            if not isinstance(use,str) or not use.strip() or enclosure not in ("enclosed","open"):
+                missing.add(name+"/需独立判断用途及围护，未明处待核")
+            if enclosure=="open" and not r.get("open_sides"):
+                missing.add(name+"/需指定实际开敞方向与证据")
+            if enclosure=="enclosed" and r.get("open_sides"):
+                missing.add(name+"/围合判断与开敞方向冲突")
+            if r.get("open_sides"):
+                axes.extend(open_axes(r, clear_regions or {}, missing))
         if not any(abs(a.det(b))>0.05 for i,a in enumerate(axes) for b in axes[i+1:]):
             missing.add(name+"/缺两个不同方向的有效实量")
     resolutions = record.get("steps", {})
@@ -193,7 +241,7 @@ def assess_capture(native, ledger, assessment, findings, limit=25):
         raise ValueError("请提供审图者和实际复开的 DWG 哈希")
     doc=ezdxf.readfile(native/"readback.dxf")
     scan=screen(doc,ledger,limit)
-    missing=verify(doc,ledger,assessment.get("professional_review",{}),findings,scan)
+    missing=[]
     if version(ledger) >= (1, 0):
         overlay = assessment.get("overlay_review") or {}
         source_hash = ledger.get("source_sha256", "")
@@ -220,6 +268,15 @@ def assess_capture(native, ledger, assessment, findings, limit=25):
             source_sha256=ledger.get("source_sha256"), dwg_sha256=cap["files"]["plan.dwg"])
         if geometry_result["pending"]:
             missing.extend("源图几何/待核/" + key for key in geometry_result["pending"])
+    clear_regions = {}
+    if version(ledger)>=(1,5) and geometry_result and isinstance(geometry_spec.get("checks"),list):
+        for check in geometry_spec["checks"]:
+            if not isinstance(check,dict) or check.get("kind")!="clear_region":
+                continue
+            result = geometry_result["results"].get(check.get("id"),{})
+            if result.get("status")=="通过":
+                clear_regions[check["id"]] = (check.get("room_id"),check.get("axis"))
+    missing.extend(verify(doc,ledger,review,findings,scan,clear_regions))
     result = {"ruler_count":len(scan["rulers"]), "non_perimeter_rulers":sum(not r["perimeter"] for r in scan["rulers"].values()),
             "reviewed_openings":len(review.get("opening_reviews",{})),
             "missing":missing, "candidate_count":len(scan["steps"]),

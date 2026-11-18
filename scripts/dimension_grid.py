@@ -6,6 +6,7 @@ from statistics import median
 
 from vendor.house_plan_designer.axismap import Axis, chain
 import wall_thickness
+from drafting_version import version
 
 EPS = 1e-6  # arithmetic equality in WCS mm
 AXES = ('x', 'y')
@@ -149,16 +150,25 @@ def solve_grid(scene):
         ref = spec['reference']
         if ref['kind'] not in ('known_length', 'assumed_wall_thickness') or not ref.get('evidence'):
             raise ValueError('State the known reference or provisional wall thickness and its evidence')
-        chains = [dict(ref, id='scale-reference', values_mm=[ref['value_mm']])]
         if ref['kind']=='assumed_wall_thickness':
             faces = []
             for q in ref['controls']:
                 c = controls.get(q,{})
                 faces.append({(b['wall'],b['at']) for b in c.get('bindings',[]) if 'wall' in b
                               and c.get('kind')=='wall_face' and b['at'] in ('min_face','max_face')})
-            if len(faces)!=2 or not any((wall,'max_face' if side=='min_face' else 'min_face') in faces[1]
-                                        for wall,side in faces[0]):
+            anchors = {wall for wall, side in faces[0]
+                       if (wall, 'max_face' if side=='min_face' else 'min_face') in faces[1]} if len(faces)==2 else set()
+            if not anchors:
                 raise ValueError('Scale from provisional wall thickness requires opposite faces of the same wall')
+            if version(scene) >= (1,5):
+                if len(anchors) != 1:
+                    raise ValueError('Choose one identifiable shear-wall candidate for the provisional scale')
+                anchor = anchors.pop()
+                wall = next((w for w in scene.get('walls', []) if w['id']==anchor), {})
+                if not wall or wall.get('element_kind','wall')!='wall' or wall.get('wall_class')=='partition':
+                    raise ValueError('The scale reference must identify a wall consistent with the shear-wall assumption')
+                ref = dict(ref, anchor_wall=anchor, value_mm=ref.get('value_mm',200))
+        chains = [dict(ref, id='scale-reference', values_mm=[ref['value_mm']])]
     origin_px = point_xy(spec.get('origin_px', [0, 0]), 'origin_px')
     origin_mm = point_xy(spec.get('origin_mm', [0, 0]), 'origin_mm')
     matrix = scene.get('source_to_mm')
@@ -280,7 +290,7 @@ def solve_grid(scene):
         intervals[axis] = dict(extrapolated_mm_per_px=average, intervals=rows)
     report = dict(mode=mode, axes=knots, intervals=intervals,
                   controls={q:dict(controls[q], mm=v) for q,v in positions.items()},
-                  chains=readings, scale_provenance=spec.get('reference') if mode=='unmarked' else 'printed',
+                  chains=readings, scale_provenance=ref if mode=='unmarked' else 'printed',
                   unmeasured_axes=[k for k in AXES if not knots[k]],
                   fallback_basis='supplied affine' if 'source_to_mm' in scene else 'equal pixel pitch on unmeasured axis')
     return list(matrix), report

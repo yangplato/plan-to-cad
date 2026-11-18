@@ -189,10 +189,16 @@ class WallThicknessTests(unittest.TestCase):
             import json
             candidate = json.loads((root/'scene.json').read_text())
             result, _ = prepare_plan(candidate, [])
-            self.assertEqual(candidate['drafting_version'], '1.3.0')
+            from drafting_version import RELEASE
+            self.assertEqual(candidate['drafting_version'], RELEASE)
             self.assertEqual({w['id']: w['width_mm'] for w in result['walls']},
                              dict(north=200, west=200, east=200, south=200, divider=120, column=200))
             self.assertNotIn('source_geometry_review', candidate)
+            from check_cad_logic import inspect
+            doc, _ = create_structure(candidate)
+            report = inspect(doc)
+            self.assertEqual(report['coverage_issues'], [])
+            self.assertFalse([r for r in report['findings'] if r['check']=='门轴缺支承'])
 
     def test_saved_dxf_uses_actual_default_faces_and_updated_opening_depth(self):
         doc, ledger = create_structure(grid_scene())

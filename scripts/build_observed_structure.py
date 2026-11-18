@@ -14,6 +14,8 @@ from dimension_grid import prepare_plan
 from wall_thickness import records as wall_thickness_records
 from build_wall_runs import draw_wall_runs
 from draw_opening import draw_opening
+from drafting_version import version
+from drawing_junctions import bind_hinges, draw_frame_path, resolve_wall_nodes
 from draw_plan_parts import add_mm_dimension
 
 
@@ -45,6 +47,10 @@ def create_structure(scene,library_root=None):
         wall["material"]=layers[row["material"]]
         if "proof_line" in row:wall["proof_line"]=[world(p) for p in row["proof_line"]]
         walls.append(wall)
+    resolve_wall_nodes(walls, scene.get("wall_junctions", []))
+    if version(scene)>=(1,6):
+        from wall_geometry_v16 import bind_material_joints
+        bind_material_joints(walls, scene)
     widths={w["id"]:w["width_mm"] for w in walls}
     rooms=[dict(id=o["id"],free_points=[world(p) for p in o.get("free_points",[])],
                 free_polygons=[[world(p) for p in z] for z in o.get("free_polygons",[])]) for o in scene["rooms"]]
@@ -103,26 +109,70 @@ def create_structure(scene,library_root=None):
     if accessible-visited:
         raise ValueError(f"Unconnected source rooms: {sorted(accessible-visited)}; re-read the approaches and their wall openings")
     msp=doc.modelspace()
-    draw_wall_runs(msp,walls,[op for op in openings if op["hosts"]],{layers["bearing"]:66,layers["partition"]:178},
-                   clear_points_mm=[point for room in rooms for point in room["free_points"]])
     ledger={"wall_layers":{name:"fills" for name in {w["material"] for w in walls}},
             "walls":walls,"rooms":rooms,"openings":openings,"room_links":{k:sorted(v) for k,v in linked.items()},
             "nonwall_fill_layers":[layers[k] for k in ("movable","fixed","door","window","ancillary")]}
     ledger["drafting_version"] = scene.get("drafting_version", "")
+    if version(scene)>=(1,6):
+        ledger["wall_geometry_v16"] = scene.get("wall_geometry_v16")
+        ledger["geometry_layers_v16"] = dict(layers)
+        ledger["geometry_registration_v16"] = {k:scene[k] for k in ("source_to_mm","grid_registration") if k in scene}
     if scene.get("wall_thickness_policy"):
         ledger["wall_thickness_policy"] = scene["wall_thickness_policy"]
         ledger["wall_thickness_review"] = wall_thickness_records(scene)
     if "source_sha256" in scene:
         ledger["source_sha256"] = scene["source_sha256"]
+    returns = scene.get("curved_wall_returns",[]) if version(scene)>=(1,6) else []
+    from curved_wall_returns import footprint
+    draw_wall_runs(msp,walls,[op for op in openings if op["hosts"]],{layers["bearing"]:66,layers["partition"]:178},
+                   clear_points_mm=[point for room in rooms for point in room["free_points"]],
+                   return_shapes=[footprint(ledger,row)[0] for row in returns])
     if scene.get("rounding_chain_ids"):
         ledger["rounding_chain_ids"] = list(scene["rounding_chain_ids"])
     if scene.get('printed_wall_tones'):
         from apply_wall_tones import apply_to_new_drawing
         apply_to_new_drawing(doc,ledger,scene)
+    if returns:
+        from curved_wall_returns import draw_returns
+        draw_returns(doc,ledger,returns)
+    if version(scene) >= (1, 4):
+        from source_geometry_review import wall_material
+        _, material, issues = wall_material(doc, list(ledger["wall_layers"]), [1,0,0,1,0,0])
+        if issues:
+            raise ValueError(f"Resolve wall material before placing openings: {issues}")
+        for op in openings:
+            if op["kind"] == "swing":
+                bind_hinges(op, material)
+            elif op["kind"] == "window" and version(scene)>=(1,6):
+                from wall_geometry_v16 import bind_window
+                bind_window(op, material, scene.get("source_sha256"))
+    by_id = {op["id"]:op for op in openings}
+    joined = set()
+    for run in scene.get("frame_paths", []):
+        group = [by_id[k] for k in run["openings"]]
+        if (len(group)<2 or any(op["kind"]!="rail" or op["id"] in joined for op in group)
+                or len({op["id"] for op in group})!=len(group)
+                or any(Vec2(a["b"]).distance(Vec2(b["a"]))>1e-6 for a,b in zip(group,group[1:]))):
+            raise ValueError("A frame path requires unique rails ordered end to start")
+        if any(op.get("lines_mm",run["offsets_mm"])!=run["offsets_mm"] for op in group):
+            raise ValueError("Check the rail offsets at the change of section")
+        points = [op["a"] for op in group]+[group[-1]["b"]]
+        drawn = draw_frame_path(msp,points,run["offsets_mm"],layers["ancillary"],
+                                run.get("cap_start",True),run.get("cap_end",True))
+        doc.groups.new().set_data(drawn)
+        for op in group:
+            op["symbol_handles"]=[e.dxf.handle for e in drawn]
+            op["symbol_source"]="连续折角栏杆"
+            joined.add(op["id"])
     for opening in openings:
+        if opening["id"] in joined:
+            continue
         ref=opening.get("reference_block")
         if opening.get("reference_id"):
             ref=scene["opening_catalog"][opening["reference_id"]]
+        if opening.get("frame_face_offsets_mm") and opening["kind"]=="window":
+            # Ordinary straight windows use the project four-rail convention at actual host depth.
+            ref = None
         if ref and opening["kind"]!="open":
             from interior_block_library import BUNDLED
             from reference_opening import draw

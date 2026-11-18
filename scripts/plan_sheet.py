@@ -189,6 +189,20 @@ def _draw_paper(doc,paper,vp,scale,settings,font,layers):
                 vp.dxf.center.y+(float(point[1])-vp.dxf.view_center_point.y)/scale)
     default_width=_room_width_factor(settings.get('room_label_width_factor',1.))
     room_records=[]
+    obstacles = None
+    if modern and settings.get("check_leaders") and any(
+            row.get("anchor_mm") is not None for row in settings.get("room_labels", [])):
+        from check_cad_logic import straight_parts
+        from check_registered_frames import expand
+        from source_geometry_review import wall_material
+        wall_layers = [layers[k] for k in WALL_GREYS if layers[k] in doc.layers]
+        _, wall, issues = wall_material(doc,wall_layers,[1,0,0,1,0,0])
+        if issues:
+            raise ValueError("Resolve unreadable walls before routing room leaders")
+        frame = [line for entity, layer, _ in expand(doc)[0]
+                 if layer in (layers["window"], layers["ancillary"])
+                 for line in straight_parts(entity)]
+        obstacles = wall.buffer(-.05), frame
     for item in settings.get('room_labels') or []:
         name=str(item.get('name','')).strip();point=item.get('point_mm')
         if not name or not point or len(point)!=2 or not all(math.isfinite(float(v)) for v in point):
@@ -220,6 +234,11 @@ def _draw_paper(doc,paper,vp,scale,settings,font,layers):
             # through the room name. It is a real editable paper LINE.
             start=(place[0],place[1]+text_height*.85 if ay>=y else place[1]-text_height*.85)
             endpoint=tuple(map(float,anchor)) if modern else (ax,ay)
+            if obstacles:
+                stroke = LineString([start, endpoint])
+                wall, frame = obstacles
+                if stroke.intersection(wall).length > .05 or any(stroke.crosses(s) for s in frame):
+                    raise ValueError(f"{name}: room leader crosses wall or frame; move label into clear space")
             line_entity=_paper_tag(target.add_line(start,endpoint,
                 dxfattribs={'layer':PAPER_LAYERS['rooms']}),'room_leader')
             record.update(anchor_mm=list(map(float,anchor)),leader_handle=line_entity.dxf.handle)
@@ -227,7 +246,7 @@ def _draw_paper(doc,paper,vp,scale,settings,font,layers):
     return meta,missing,legend,room_records
 
 
-def prepare_sheet(doc,layers,settings=None):
+def prepare_sheet(doc,layers,settings=None,*,custom_scale=False):
     """Create editable A3 paper annotations and a locked 1:scale model viewport.
 
     Optional settings.metadata: project, unit_type, drawing_title, revision,
@@ -281,8 +300,15 @@ def prepare_sheet(doc,layers,settings=None):
     if not ext.has_data:raise ValueError('A plotted plan must have model geometry')
     left,bottom,right,top=VIEW_RECT;available=(right-left,top-bottom)
     def fits(scale,e):return e.size.x<=available[0]*scale and e.size.y<=available[1]*scale
-    choice=settings.get('scale');scales=[int(choice)] if choice is not None else [50,100,200]
-    if any(v not in (50,100,200) for v in scales):raise ValueError('A3 supports scale denominators 50, 100 or 200')
+    choice=settings.get('scale')
+    scales=[50,100,200]
+    if choice is not None:
+        value=float(choice)
+        if not math.isfinite(value) or value<=0:
+            raise ValueError('Print scale denominator must be positive and finite')
+        if not custom_scale and value not in scales:
+            raise ValueError('A3 supports scale denominators 50, 100 or 200')
+        scales=[int(value) if value.is_integer() else value]
     for scale in scales:
         if not fits(scale,ext):continue
         if 'PLAN-MM' in doc.dimstyles:

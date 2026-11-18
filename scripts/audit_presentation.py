@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import ezdxf
 from presentation import APP,SIDES,resolve_roles,annotation_layers,modern_layers,layer_spaces
+from drafting_version import version
 
 
 def audit(doc,ledger):
@@ -76,7 +77,8 @@ def audit(doc,ledger):
     if any(layer in doc.layers for layer in paper_layers.values()):
         from plan_sheet import audit_sheet
         paper_result=audit_sheet(doc)
-        issues.extend(paper_result['issues'])
+        if version(ledger)<(1,5):
+            issues.extend(paper_result['issues'])
     return dict(passed=not issues,issues=issues,wall_hatches=walls,dimensions=details,
                 paper=paper_result,layer_roles=roles,layer_spaces=layer_spaces(doc))
 

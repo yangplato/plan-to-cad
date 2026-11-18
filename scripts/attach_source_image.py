@@ -36,8 +36,9 @@ def attach(doc, image_path, registration, clip_px=None, reference_name=None):
     image_path = Path(image_path)
     layer_name=SOURCE_LAYER if modern_layers(registration.get('layers',{})) else LEGACY_SOURCE_LAYER
     filename = image_path.name if reference_name is None else reference_name
-    if not isinstance(filename, str) or filename in ("", ".", "..") or any(c in filename for c in "/\\:\0"):
-        raise ValueError("Use a single relative filename for the original image")
+    basename = filename.removeprefix("参照/") if isinstance(filename,str) else ""
+    if basename in ("", ".", "..") or any(c in basename for c in "/\\:\0"):
+        raise ValueError("Use a relative image name beside the DWG or inside 参照/")
     model = doc.modelspace()
     if doc.units != 4 or model.query(f'IMAGE[layer=="{layer_name}"]'):
         raise ValueError("Expected a millimetre model without an existing marketing image reference")

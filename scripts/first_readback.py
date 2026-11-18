@@ -57,6 +57,13 @@ def audit(native,ledger_path,output,layers,console):
     report = {'DWG_SHA256':digest(native/'plan.dwg'),'墙材':material['status'],'原生改点':dim['status'],
             '符号全部存在':all(v['status']=='通过' for v in actual.values()),'逐件尺寸和分层退出码':statuses,
             'scope':'本清单来自绘图者的读图。对象是否漏登、门向是否对、两端是否正确、家具是否可用及是否真正贴合仍需对照源图和实物边。部分本体不可自动量测时，逐件补独立手量记录。'}
+    from drafting_version import version
+    if version(ledger) >= (1,4):
+        from check_cad_logic import inspect
+        logic = inspect(doc)
+        logic["dxf_sha256"] = index["files"]["readback.dxf"]
+        write(output/"cad-only.json", logic)
+        report["cad_logic_candidates"] = len(logic["findings"])
     spec = source_geometry_review.declared_spec(ledger)
     if spec is not None:
         report['source_geometry_review'] = source_geometry_review.audit(

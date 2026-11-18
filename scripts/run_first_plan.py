@@ -79,6 +79,16 @@ def run(jobfile,folder):
     def read(p):return json.loads(p.read_text(encoding='utf-8'))
     scene=read(path('scene'));schedule=read(path('objects'))
     scene.setdefault('drafting_version',job.get('drafting_version', RELEASE))
+    if job.get('drafting_version') and version(job) != version(scene):
+        raise ValueError("JOB 与 scene 的技能版本不一致")
+    environment = None
+    if version(scene) >= (1,6):
+        from feedback_book import read_brief
+        from native_environment import probe
+        brief = read_brief()
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder/'开工错题清单.md').write_text(brief,encoding='utf-8')
+        environment = probe(folder/'environment', path('console', False))
     for original in schedule:
         options=original.get("fixture_options",{})
         if isinstance(options.get("library"),str):
@@ -87,6 +97,20 @@ def run(jobfile,folder):
     if scene.get('source_sha256',actual_source)!=actual_source:
         raise ValueError('The job image differs from the registered source')
     scene.setdefault('source_sha256',actual_source)
+    if version(scene) >= (1,6):
+        from source_evidence import prepare
+        from repair_batch import provenance
+        repairs = path('repair_list', False)
+        batch = provenance(path('revision_of', False), read(repairs) if repairs else None, actual_source)
+        inputs = folder/'source-inputs'
+        inputs.mkdir()
+        for key, filename in (('source_panels', 'panels.json'), ('source_author_inventory', 'author.json'),
+                              ('wall_guides', 'guides.json')):
+            origin = path(key, False)
+            if origin is not None:
+                copyfile(origin, inputs/filename)
+        if (inputs/'panels.json').is_file():
+            prepare(path('image'), inputs/'panels.json', folder/'source-views')
     source_scene,source_schedule=scene,schedule
     if job.get('apply_printed_tones'):
         from apply_wall_tones import run as update_printed_tones
@@ -104,17 +128,28 @@ def run(jobfile,folder):
     # New authoring runs always declare the independent source-geometry gate.
     # A missing source inventory produces a candidate, never an accepted plan.
     products['ledger']['source_geometry_review_required']=True
+    if version(source_scene) >= (1,6):
+        products['ledger']['repair_batch'] = batch
+        products['ledger']['source_read_bands_px'] = {
+            'along': job.get('uncertainty_px'), 'normal': job.get('normal_uncertainty_px', job.get('uncertainty_px'))}
     folder.mkdir(exist_ok=True,parents=True)
     image_path = path('image')
     if version(source_scene) >= (1, 0):
         from attach_source_image import attach
         filename = 'source-plan' + image_path.suffix.lower()
+        if version(source_scene)>=(1,5):
+            filename = '参照/' + filename
+            (folder/'参照').mkdir(exist_ok=True)
         reference = attach(doc, image_path, products['registration'],
                            clip_px=job.get('reference_clip_px'), reference_name=filename)
+        if version(source_scene) >= (1,4):
+            doc.layers.get(reference['layer']).off()
         products['ledger']['source_reference'] = reference
         copyfile(image_path, folder / filename)
     source=folder/'source.dxf';doc.saveas(source)
     for name,report in products.items():write(folder/(name+'.json'),report)
+    if environment and environment['status'] != 'pass':
+        raise RuntimeError(f"原生预检失败，已保留可编辑 DXF。请检查 {folder/'environment/report.json'}")
     inventory_file=path('furniture_source',False)
     if inventory_file:
         inventory=read(inventory_file)
@@ -145,7 +180,7 @@ def run(jobfile,folder):
         room_witness=witnesses,use_reading=path('use_reading',False),
         contact_job=folder/'contacts.json' if contacts['items'] else None)
     measured=preflight(options)
-    if version(source_scene) >= (1, 0):
+    if (1,0) <= version(source_scene) < (1,5):
         copyfile(image_path, folder/'review'/'native'/filename)
     from design_dimensions import enabled, audit as design_audit
     if enabled(source_scene):
@@ -181,6 +216,15 @@ def run(jobfile,folder):
             checks.append({'job':name,'satisfied':result['ok'],'coverage':result['coverage_issues']})
         measured['functional_clearances']=checks
     actual=ezdxf.readfile(folder/'review/native/readback.dxf')
+    if version(source_scene) >= (1,6):
+        from wall_geometry_v16 import audit as audit_wall_geometry
+        wall_report = audit_wall_geometry(actual, products['ledger'], products['edge-relations'],
+                                          source_sha256=actual_source)
+        write(folder/'review/wall-geometry-v16.json', wall_report)
+        from room_label_clearance import audit as inspect_labels
+        write(folder/'review/room-label-clearance.json',
+              dict(inspect_labels(actual,products['ledger']),dwg_sha256=measured['dwg_sha256'],
+                   dxf_sha256=digest(folder/'review/native/readback.dxf')))
     from source_geometry_review import audit as source_geometry_audit, VERSION as SOURCE_REVIEW_VERSION
     geometry_file=path('source_geometry_review',False)
     if geometry_file:
@@ -211,7 +255,15 @@ def run(jobfile,folder):
     write(folder/"review/object-edge-relations.json",edges)
     measured["edge_relations"]={k:edges[k] for k in ("ok","failed_count","unresolved_count","coverage_issues")}
     from plan_sheet import proof as print_sheet
-    paper=print_sheet(folder/"review/native",folder/"review/首稿试印.pdf",path("ctb",False))
+    if version(source_scene)>=(1,5) and job.get("print_pdf") is False:
+        paper = {"status":"未要求输出PDF","dwg_sha256":measured["dwg_sha256"]}
+    else:
+        try:
+            paper=print_sheet(folder/"review/native",folder/"review/首稿试印.pdf",path("ctb",False))
+        except (ValueError, OSError, RuntimeError, ImportError) as exc:
+            if version(source_scene)<(1,5):
+                raise
+            paper = {"status":"PDF未生成","error":str(exc),"dwg_sha256":measured["dwg_sha256"]}
     write(folder/"review/print-proof.json",paper)
     measured["print_proof"]=paper
     measured['paper_settings']=products['sheet']
@@ -231,9 +283,20 @@ def run(jobfile,folder):
         write(folder/'review/seating-groups.json',detailed_seats(actual,groups))
     if path('wall_guides',False):
         guid=path('wall_guides')
-        measured['wall_colour_stations']=saved_wall_tones(path('image'),guid,folder/'review/native/readback.dxf',
-            folder/'registration.json',folder/'review/wall-colours',job['uncertainty_px'],job.get('normal_uncertainty_px',job['uncertainty_px']))
-        source_faces(path('image'),path('own_reading'),guid,folder/'review/opening-source-stations',path('guide_report',False),registration_path=folder/'registration.json')
+        try:
+            measured['wall_colour_stations']=saved_wall_tones(path('image'),guid,folder/'review/native/readback.dxf',
+                folder/'registration.json',folder/'review/wall-colours',job['uncertainty_px'],job.get('normal_uncertainty_px',job['uncertainty_px']))
+        except (ValueError, KeyError, TypeError) as exc:
+            if version(source_scene) < (1,6):
+                raise
+            measured['wall_colour_stations'] = 'review'
+            measured['wall_colour_evidence_problem'] = str(exc)
+        try:
+            source_faces(path('image'),path('own_reading'),guid,folder/'review/opening-source-stations',path('guide_report',False),registration_path=folder/'registration.json')
+        except (ValueError, KeyError, TypeError) as exc:
+            if version(source_scene) < (1,6):
+                raise
+            measured['opening_source_evidence_problem'] = str(exc)
     measured['object_ids']=list(products['objects'])
     measured['review_positions']=save_review_positions(folder).name
     write(folder/'author-summary.json',measured)

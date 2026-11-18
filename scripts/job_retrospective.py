@@ -183,7 +183,7 @@ def render_report(data, job_dir: Path) -> str:
         lines.append(f"复验：{STATUS_LABELS[recheck['status']]}。{inline(recheck['reason'])} 证据：{links(recheck['evidence'], job_dir)}。")
     lines += ["", "## 未查与经验边界"]
     lines += [f"- {inline(item)}" for item in unverified] or ["- 输入未另列未查项；具体覆盖仍以检查报告为准。"]
-    lines += ["- 本记录只保存在本作业目录。不自动写全局经验、skill或Obsidian；未经验证和用户采纳，不提升为通用规则。", ""]
+    lines += ["- 本案实量与模型观察保存在作业目录。用户交付反馈另记共享错题集，供以后按条件核对。", ""]
     return "\n".join(lines)
 
 
@@ -205,6 +205,12 @@ def write_report(input_path: Path, job_dir: Path, *, overwrite: bool = False) ->
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
+        if data.get("user_feedback"):
+            from feedback_book import record_feedback
+            try:
+                record_feedback(data["user_feedback"])
+            except ValueError as exc:
+                raise ReportError(f"用户交付反馈登记失败：{exc}") from exc
         os.replace(temporary, output)
     finally:
         if temporary is not None and temporary.exists():

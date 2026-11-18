@@ -15,6 +15,7 @@ from align_furniture_to_wall import EPS, wallsides
 from place_plan_families import catalog,place_family,place_dining
 from place_plan_fixtures import place_fixture
 from interior_block_library import BUNDLED, place_bundled, resolve_file
+from drafting_version import version
 
 
 def prune_unused_import_layers(doc, roles):
@@ -205,6 +206,10 @@ def compile_plan(scene,objects,library_root=None):
         if ident in schedule:raise ValueError('Duplicate object: '+ident)
         role=row['role']
         if role not in ('fixed','movable','ancillary'):raise ValueError('Expected functional object layer: '+ident)
+        if version(scene)>=(1,5) and group!='library':
+            equipment = group=='fixture' and family in ('sink','hob','washer','shower_screen','basin','x_frame')
+            if role=='movable' or (role=='fixed' and not equipment):
+                raise ValueError(f'{ident}: 活动家具和固定家具须选参考图库的 library 块，按原图定位')
         try:
             width,depth=row.get('width_mm'),row.get('depth_mm')
             if group=='hosted':
@@ -235,6 +240,8 @@ def compile_plan(scene,objects,library_root=None):
                     contacts.append({'id':ident,'handle':ref.dxf.handle,**row['contact']})
             elif group=='library':
                 ref=place_library(doc,row,world,roles[role],library_root)
+                if row.get('contact'):
+                    contacts.append({'id':ident,'handle':ref.dxf.handle,**row['contact']})
             elif group=='outline':
                 ref=draw_outline(doc,row,world,roles[role])
                 if row.get('contact'):contacts.append({'id':ident,'handle':ref.dxf.handle,**row['contact']})
@@ -262,6 +269,17 @@ def compile_plan(scene,objects,library_root=None):
         entities[ident]=ref
     relations=[]
     for ident,row in schedule.items():
+        table = row.get('dining_table')
+        if table is not None:
+            if row['type']!='library' or table==ident or schedule.get(table,{}).get('type')!='library':
+                raise ValueError(f'{ident}: 给参考库餐椅指定同案餐桌块 ID')
+            distance = float(row['pull_mm'])
+            if not math.isfinite(distance) or distance<=0:
+                raise ValueError(f'{ident}: 退椅距离须为正数')
+            seat = {'id':ident,'handle':entities[ident].dxf.handle}
+            if 'pull_vector_mm' in row:
+                seat['pull_vector_mm']=row['pull_vector_mm']
+            chairs.append({'table_handle':entities[table].dxf.handle,'seats':[seat],'pull_mm':distance})
         host=row.get('support')
         if host:
             if host not in entities:raise ValueError(f'{ident}: actual support {host} missing')
@@ -283,6 +301,9 @@ def compile_plan(scene,objects,library_root=None):
                 'file': row.get('library_file', BUNDLED.name),
                 'block': row['library_block'],
             }
+    if version(scene)>=(1,6):
+        ledger["geometry_objects_v16"] = drawing_ids
+        ledger["geometry_projections_v16"] = relations
     edges=edge_job(objects,drawing_ids,scene.get('edge_review_reach_mm',75))
     placement=apply_edges(doc,ledger,edges,relations)
     for change in placement['moves']:
@@ -298,7 +319,16 @@ def compile_plan(scene,objects,library_root=None):
             if not low-EPS <= loc <= high+EPS: raise ValueError(f'{ident}: shared edges require a centre outside the source zone')
         fits[ident]=check_hosted_family(doc,table,item,actual,source_to_mm=scene['source_to_mm'])
         if not fits[ident]['fit']: raise ValueError(f'{ident}: edge-constrained placement lacks full solid backing or enters a door sweep')
-    sheet=prepare_sheet(doc,roles,scene.get('paper',{}))
+    paper = dict(scene.get('paper',{}))
+    scale_ref = scene.get('grid_registration',{}).get('scale_provenance')
+    if version(scene)>=(1,5) and isinstance(scale_ref,dict) and scale_ref.get('kind')=='assumed_wall_thickness':
+        meta = dict(paper.get('metadata') or {})
+        note = f"按剪力墙候选 {scale_ref['value_mm']:g} mm 暂定比例"
+        meta['limitations'] = '。'.join(filter(None,(note,meta.get('limitations'))))
+        paper['metadata'] = meta
+    if version(scene)>=(1,4):
+        paper['check_leaders']=True
+    sheet=prepare_sheet(doc,roles,paper,custom_scale=version(scene)>=(1,5))
     removed_layers=prune_unused_import_layers(doc,roles)
     removed_layers=list(dict.fromkeys(sheet.get('empty_custom_layers_removed',[])+removed_layers))
     sheet['unused_import_layer_definitions_removed']=removed_layers

@@ -6,6 +6,7 @@ Source reading and any ambiguous selection still require independent review.
 from copy import deepcopy
 import math
 import re
+from drafting_version import version
 
 POLICY = "wall-thickness-calibrated-pixels/1"
 LEGACY_POLICY = "wall-thickness-240-120/1"
@@ -72,7 +73,7 @@ def pixel_policy(scene):
     return bool(match and tuple(map(int, match.groups())) >= (1, 3))
 
 
-def pixel_selection(wall, source_sha256, projection):
+def pixel_selection(wall, source_sha256, projection, preferred_mm=None):
     """Measure original pixels through the same local grid used by geometry."""
     ident=wall.get('id','wall');ev=wall.get('thickness_evidence')
     if not isinstance(ev,dict) or ev.get('kind')!='calibrated_pixels':
@@ -116,7 +117,11 @@ def pixel_selection(wall, source_sha256, projection):
     candidates=[v for v in CHOICES if low-EPS<=v<=high+EPS]
     if not candidates:
         raise ValueError(f'{ident}: no 100/120/200/240 candidate fits the observed pixel range; recheck faces/scale')
-    if len(candidates)==1:
+    basis = ev.get("selection_basis","single pixel-supported candidate")
+    if preferred_mm in candidates:
+        selected = preferred_mm
+        basis = "本户普通外墙统一选档，且在本截面原图候选范围内"
+    elif len(candidates)==1:
         selected=candidates[0]
     else:
         selected=wall.get('width_mm')
@@ -124,10 +129,10 @@ def pixel_selection(wall, source_sha256, projection):
                 not isinstance(ev.get('selection_basis'),str) or not ev['selection_basis'].strip()):
             raise ValueError(f'{ident}: ambiguous thickness candidates {candidates}; retain candidates and check another section/control/net span')
     return dict(measured_mm=mm,measured_range_mm=[low,high],candidates_mm=candidates,
-                selected_mm=float(selected),selection_basis=ev.get('selection_basis','single pixel-supported candidate'))
+                selected_mm=float(selected),selection_basis=basis)
 
 
-def resolve_width(wall, source_sha256=None, *, drafting_version='1.3.0', projection=None):
+def resolve_width(wall, source_sha256=None, *, drafting_version='1.3.0', projection=None, preferred_mm=None):
     """Current custom-builder API. It selects width and never moves geometry."""
     if not pixel_policy({'drafting_version':drafting_version}):
         return _legacy_width(wall,source_sha256)
@@ -139,7 +144,7 @@ def resolve_width(wall, source_sha256=None, *, drafting_version='1.3.0', project
     if isinstance(ev,dict) and ev.get('kind') in ('printed_dimension','building_document'):
         # Keep explicit dimensions, including a clearly marked value outside the four inferred sizes.
         return _legacy_width(dict(wall,wall_class='main'),source_sha256)
-    return pixel_selection(wall,source_sha256,projection)['selected_mm']
+    return pixel_selection(wall,source_sha256,projection,preferred_mm)['selected_mm']
 
 
 def _pixel_projection(scene):
@@ -150,7 +155,8 @@ def _pixel_projection(scene):
     else:
         report=scene.get('grid_registration',{})
         registration=scene
-    if isinstance(report.get('scale_provenance'),dict) and report['scale_provenance'].get('kind')=='assumed_wall_thickness':
+    if (isinstance(report.get('scale_provenance'),dict) and report['scale_provenance'].get('kind')=='assumed_wall_thickness'
+            and version(scene)<(1,5)):
         raise ValueError('Do not use an assumed wall thickness to prove the same wall thickness')
     return GridProjection(registration),report
 
@@ -167,19 +173,34 @@ def prepare(scene):
         return scene
     result = deepcopy(scene)
     modern=pixel_policy(result)
+    geometry_v16 = version(result) >= (1,6)
+    if geometry_v16:
+        from wall_geometry_v16 import bind_controls, ordinary_preference
+        bind_controls(result)
     policy=POLICY if modern else LEGACY_POLICY
     rows = result.get("walls", [])
     if not isinstance(rows, list):
         raise ValueError("walls must be an array")
     needs_pixels=modern and any(isinstance(w.get('thickness_evidence'),dict) and w['thickness_evidence'].get('kind')=='calibrated_pixels' for w in rows)
-    projection,calibration=_pixel_projection(result) if needs_pixels else (None,{})
+    grid = result.get('dimension_grid', result.get('grid_registration', {}))
+    ref = grid.get('reference',grid.get('scale_provenance'))
+    provisional = (version(result)>=(1,5) and grid.get('mode')=='unmarked' and
+                   isinstance(ref,dict) and ref.get('kind')=='assumed_wall_thickness')
+    projection,calibration=_pixel_projection(result) if needs_pixels or provisional else (None,{})
     for row in rows:
-        selected = resolve_width(row, result.get("source_sha256"),drafting_version=result['drafting_version'],projection=projection)
+        preferred = ordinary_preference(result,row) if geometry_v16 else None
+        is_anchor = provisional and row['id']==calibration['scale_provenance']['anchor_wall']
+        if is_anchor:
+            if (row.get('thickness_evidence') or {}).get('kind') in ('printed_dimension','building_document'):
+                raise ValueError('Use the documented wall thickness as a known scale reference')
+            selected = number(calibration['scale_provenance']['value_mm'],row['id'])
+        else:
+            selected = resolve_width(row, result.get("source_sha256"),drafting_version=result['drafting_version'],projection=projection,preferred_mm=preferred)
         measurement=None
-        if modern and isinstance(row.get('thickness_evidence'),dict) and row['thickness_evidence'].get('kind')=='calibrated_pixels':
-            measurement=pixel_selection(row,result.get('source_sha256'),projection)
+        if modern and not is_anchor and isinstance(row.get('thickness_evidence'),dict) and row['thickness_evidence'].get('kind')=='calibrated_pixels':
+            measurement=pixel_selection(row,result.get('source_sha256'),projection,preferred)
             axis='x' if row['a'][0]==row['b'][0] else 'y'
-            if axis in calibration.get('unmeasured_axes',[]):
+            if not provisional and axis in calibration.get('unmeasured_axes',[]):
                 raise ValueError(f"{row.get('id')}: {axis} wall thickness has no independently calibrated dimension scale")
         if row.get("element_kind", "wall") == "column":
             continue
@@ -212,6 +233,9 @@ def prepare(scene):
             "basis": "calibrated_pixels" if measurement else ("explicit_dimension" if row.get("thickness_evidence") else "legacy_user_default"),
             "evidence_check": "format/source binding only; actual source reading requires independent review"}
         if measurement:row['wall_thickness_review'].update(measurement)
+        if is_anchor or (provisional and measurement):
+            row['wall_thickness_review']['basis'] = 'assumed_wall_thickness' if is_anchor else 'provisional_pixel_scale'
+            row['wall_thickness_review']['scale_reference'] = calibration['scale_provenance']
     result["wall_thickness_policy"] = policy
     return result
 

@@ -1,6 +1,25 @@
 # 户型描图的轻量经验
 
-只服务准确还原、减少返工和标准交付。开工按问题查相关条目；不默认通读历史案例或搬用旧尺寸、像素阈值、机器路径。经验命中后仍从本案原图和成品独立核验。
+## 交付反馈错题集
+
+收到用户对已交付图纸的具体纠正、绘图偏好或“以后遇到这种情况”的意见，就在本轮登记。同时按用户要求处理当前图纸。代理负责提取和执行，用户可以直接在对话中指出问题。仅调整本户型的意见也可沉淀为有条件的核对动作。例如，某户要求把床转向，下一案查原图中的床头朝向；该户的方向与移动量留在来源记录。疑问或可能原因保留其不确定性。下一案图纸的明标、实际构造和用户当次要求优先。
+
+每项填写四个字段。以下为字段示例，实际作业换成本次反馈。
+
+```json
+{
+  "source": "项目与户型、交付版本或可复查的图纸位置",
+  "feedback": "这个窗比旁边的墙薄了。",
+  "condition": "普通直窗两端有实墙支承时",
+  "check": "在两端分别量实墙的两面和窗框外缘，核实两者齐平。"
+}
+```
+
+代理将 JSON 放入作业过程目录，调用 `python3 scripts/feedback_book.py record --input 交付反馈.json`。也支持标准输入 `--input -` 或同次反馈的数组。看到返回编号后才算写入成功。同一来源及原话重复提交只记一次。用户明确更正以前的意见时，在新条目填 `supersedes` 及旧编号。保留旧条供追溯，开工清单展示生效条目。真实反馈可以立即成为跨户型参照；变更验收标准另按用户明确决定执行。
+
+每个新任务的绘图者在判图前运行 `python3 scripts/feedback_book.py read` 并阅读输出。在对应的读图、建模、家具摆放或交付复核步骤使用命中项。常规 `run_first_plan.py` 在原生预检之前再次加载并将当时的适用条件、核对动作和编号保存至过程目录的 `开工错题清单.md`。这份清单留给绘图者，不随纯 CAD 盲审包或用户成品分发。
+
+同一用户的 Codex、WorkBuddy 和本地 API 执行进程共用同一份 Markdown。默认文件为 `~/.config/plan-to-cad/feedback-book.md`。可以在 `~/.config/plan-to-cad/feedback-book-path.txt` 单行填写既有目录内的绝对文件路径，或由执行环境配置 `PLAN_TO_CAD_FEEDBACK_BOOK`。环境变量优先。远程进程需要挂载同一份数据才能读取本机反馈。首次使用默认空库即可开工，指定库失联或内容无法解析时，恢复该库后重读。升级技能时保留安装目录以外的错题集。
 
 ## 当前可回用的方法
 
@@ -29,7 +48,7 @@ python scripts/job_retrospective.py --input 作业目录/复盘输入.json --job
 - `findings`：每项含`id/problem/method`、`before:{measurement,evidence}`、`after:{measurement,evidence}`和`recheck:{status,evidence,reason可选}`。measurement写实量及对象；尚未修正就如实写明。
 - `unverified`：未查项列表；`timing:{active_minutes,background_minutes}`写实测分钟，未知用null。
 
-无新增时不填findings，填`reference`指向本案已有记录；终稿及用时字段仍保留。checks可用于带出已知失败／待核。脚本只整理输入报告状态，已知失败先报，不产生整图验收结论，不自动写经验库、skill或Obsidian。
+无新增时不填findings，填`reference`指向本案已有记录；终稿及用时字段仍保留。checks可用于带出已知失败／待核。复盘输入如已带有真实用户意见，可填 `user_feedback`，格式与前述登记命令相同。复盘会把这些意见登记到同一本错题集。模型自己的 findings 只保存在本案。
 
 ## 什么可以晋升
 

@@ -109,7 +109,7 @@ def _opening_cuts(openings, axes):
     return cutters
 
 
-def draw_wall_runs(msp, walls, openings, layer_gray, *, clear_points_mm=()):
+def draw_wall_runs(msp, walls, openings, layer_gray, *, clear_points_mm=(), return_shapes=()):
     """Draw after validation. 'a', 'b', 'width_mm' use WCS mm; no polygons/room fills are accepted."""
     footprints, axes = _wall_footprints(walls)
     cutters = _opening_cuts(openings, axes)
@@ -117,8 +117,8 @@ def draw_wall_runs(msp, walls, openings, layer_gray, *, clear_points_mm=()):
     for hosts, cutter in cutters.values():
         for host in hosts:
             cuts[host].append(cutter)
-    final = unary_union([poly.difference(unary_union(cuts[ident]))
-                         for ident,(_,poly) in footprints.items()])
+    final = unary_union([*(poly.difference(unary_union(cuts[ident]))
+                           for ident,(_,poly) in footprints.items()), *return_shapes])
     for point in clear_points_mm:
         if final.covers(Point(_xy(point))):
             raise ValueError(f"Known clear point {point} lies in a wall")

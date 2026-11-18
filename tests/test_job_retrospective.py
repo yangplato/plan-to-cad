@@ -1,7 +1,10 @@
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -47,6 +50,20 @@ class RetrospectiveTests(unittest.TestCase):
         self.assertIn("实际操作0分钟", text)
         self.assertIn("不是脚本作出的整图验收", text)
         self.assertEqual((self.job / "final.dwg").read_bytes(), b"actual frozen final")
+
+    def test_explicit_user_feedback_persists_across_jobs_but_model_findings_stay_local(self):
+        book=self.job/"个人错题集.md"
+        env=dict(os.environ,PLAN_TO_CAD_FEEDBACK_BOOK=str(book))
+        with patch.dict(os.environ,env):
+            self.write()
+        self.assertFalse(book.exists())
+        self.data["user_feedback"]=[{"source":"A户初稿","feedback":"请检查窗框齐墙",
+                                     "condition":"普通直窗","check":"分别实量两端实墙及窗框"}]
+        src=self.job/"input.json";src.write_text(json.dumps(self.data))
+        subprocess.run([sys.executable,module.__file__,"--job-dir",str(self.job),"--input",str(src),"--overwrite"],
+                       env=env,capture_output=True,check=True)
+        self.assertIn("请检查窗框齐墙",book.read_text())
+        self.assertNotIn("parallel walls overlap",book.read_text())
 
     def test_zero_error_prose_does_not_create_pass(self):
         self.data["checks"] = []
