@@ -1,12 +1,25 @@
-# plan-to-cad · 平面一键CAD
+# plan-to-cad · 平面一键 CAD
 
-平面一键CAD 可以把带尺寸或不带尺寸的房地产户型图，转成可编辑、图层清晰的 DWG。
+把住宅户型图重建为可编辑的分层 DWG，原图有无尺寸标注都可以用。 · [English](README.en.md)
 
-注意:
-1.Skill的目标并非100%准确,而是让人手工画图的时间减少99%; 取得成果后,通常你只需要拉伸多段线顶点、整理矩形便可获得相对满意的成果
-2.实例测试基于codex桌面端,在 6.2 sol high/ 6.2 astra high/ 6 astra high上都有稳定的表现,额度消耗通常不超过pro 5x周额度的1%(以6 astra high测试)
+**当前版本 V1.6.5** · [安装到 Codex](#安装到-codex) · [下载发布包](https://github.com/yangplato/plan-to-cad/releases/tag/v1.6.5) · [如何使用](#如何使用)
 
-当前版本为 V1.6.5。
+## 案例对照
+
+### 仁城澜峰 117㎡
+
+| 营销户型图 | CAD 线稿与 A3 图框 |
+| --- | --- |
+| <a href="assets/readme/rencheng-117-lower.jpg"><img src="assets/readme/rencheng-117-lower.jpg" alt="仁城澜峰 117㎡ 原图下半页" width="410"></a> | <a href="assets/readme/rencheng-117-cad-sheet.png"><img src="assets/readme/rencheng-117-cad-sheet.png" alt="仁城澜峰 117㎡ CAD 线稿，保留 A3 图框和图签" width="410"></a> |
+
+<details>
+<summary>查看青云书院 137㎡ · CAD 模型空间</summary>
+
+| 营销户型图 | CAD 模型空间（无图框） |
+| --- | --- |
+| <a href="assets/readme/qingyun-137-source.jpg"><img src="assets/readme/qingyun-137-source.jpg" alt="青云书院 137㎡ 营销户型图" width="410"></a> | <a href="assets/readme/qingyun-137-model.png"><img src="assets/readme/qingyun-137-model.png" alt="青云书院 137㎡ CAD 模型空间" width="410"></a> |
+
+</details>
 
 ## 安装到 Codex
 
@@ -19,22 +32,6 @@
 ```
 
 如果你已经拿到 ZIP，直接拖进 Codex，说「请用这个 ZIP 帮我安装平面一键 CAD」。安装后，在输入框键入 `$plan-to-cad`，看它是否出现在技能列表中。如果没有出现，重启 Codex 再看一次。
-
-[下载 V1.6.5 发布包](https://github.com/yangplato/plan-to-cad/releases/tag/v1.6.5)
-
-## 它做什么
-
-### 实例01
-
-| 营销户型图 | CAD 模型空间（无图框） |
-| --- | --- |
-| [![青云书院 137㎡ 营销户型图](assets/readme/qingyun-137-source.jpg)](assets/readme/qingyun-137-source.jpg) | [![青云书院 137㎡ CAD 模型空间（无图框）](assets/readme/qingyun-137-model.png)](assets/readme/qingyun-137-model.png) |
-
-### 实例02
-
-| 营销户型图 | CAD 线稿（保留 A3 图框和图签） |
-| --- | --- |
-| [![仁城澜峰 117㎡ 营销户型图（下半页为重建依据）](assets/readme/rencheng-117-lower.jpg)](assets/readme/rencheng-117-lower.jpg) | [![仁城澜峰 117㎡ CAD 线稿（保留 A3 图框和图签）](assets/readme/rencheng-117-cad-sheet.png)](assets/readme/rencheng-117-cad-sheet.png) |
 
 ## 如何使用
 
@@ -52,7 +49,6 @@
 - 打开 A3 线稿 PDF 检查打印效果。审查记录列出原图明标、推定尺寸和本次修正。
 - 模型空间直接显示房名。图框、图签和图例保存在 `Plan-A3` 布局。你可以在布局里修改图框，也可以随原图提供自己的 CAD 图框模板，告诉 Codex 这次用哪一套。
 
-
 ## 越用越懂你的习惯
 
 **交付反馈会自动进入全局错题集，供后续所有户型参考。** 你看完交付图纸后，直接在对话中指出哪里需要改。技能会在当轮保存你的原话和对应图纸，并写明这条意见适用于什么情况、下次要核对什么。
@@ -66,6 +62,11 @@
 [室内平面图块库（DXF）](assets/interior-plan-blocks.dxf) 随技能提供，包含家具、柜体、厨卫设备、门和楼梯等 97 个毫米制图块。家具全部选参考库块，按数量、朝向、占地与通行对位。通常只需提供户型原图。想指定某个图块时，用 CAD 打开图库，选好后把编号告诉 Codex，例如“北卧用 BD04 双枕双人床”。
 
 有项目专用图库时，可随图提供并指定优先使用。[图库选用方法](references/plan-families.md)
+
+## 实测说明
+
+1. Skill的目标并非100%准确,而是让人手工画图的时间减少99%; 取得成果后,通常你只需要拉伸多段线顶点、整理矩形便可获得相对满意的成果
+2. 实例测试基于codex桌面端,在 6.2 sol high/ 6.2 astra high/ 6 astra high上都有稳定的表现,额度消耗通常不超过pro 5x周额度的1%(以6 astra high测试)
 
 ## 运行环境与自测
 
