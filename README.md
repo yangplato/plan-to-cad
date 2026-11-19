@@ -80,3 +80,10 @@ python scripts/run_first_plan.py work/demo-input/job.json work/demo-output
 ```
 
 [作业参数与图像配准](references/draft-from-schedule.md) · [绘图、叠图与复量检查表](references/stage-checks.md) · [组件与素材说明](THIRD_PARTY_NOTICES.md)
+
+<details>
+<summary>觉得有用的话，可以请我喝杯咖啡</summary>
+
+<img src="assets/readme/wechat-appreciation.png" width="420" alt="微信赞赏码">
+
+</details>
