@@ -8,6 +8,20 @@
 
 当前版本为 V1.6.5。
 
+## 安装到 Codex
+
+在 Codex 桌面端新建一个会话，复制下面整段发给它。
+
+```text
+请帮我安装「平面一键 CAD」V1.6.5。
+发布页：https://github.com/yangplato/plan-to-cad/releases/tag/v1.6.5
+请下载发布页里的 plan-to-cad-v1.6.5.zip，用同页的 SHA-256 校验文件核对后，将完整的 plan-to-cad 文件夹放进当前 Codex 的个人技能目录。如果已经装过，请备份旧版，再更新原来的安装位置。安装后告诉我怎么确认 Codex 能识别 $plan-to-cad。
+```
+
+如果你已经拿到 ZIP，直接拖进 Codex，说「请用这个 ZIP 帮我安装平面一键 CAD」。安装后，在输入框键入 `$plan-to-cad`，看它是否出现在技能列表中。如果没有出现，重启 Codex 再看一次。
+
+[下载 V1.6.5 发布包](https://github.com/yangplato/plan-to-cad/releases/tag/v1.6.5)
+
 ## 它做什么
 
 ### 实例01
@@ -53,11 +67,9 @@
 
 有项目专用图库时，可随图提供并指定优先使用。[图库选用方法](references/plan-families.md)
 
-## 首次安装
+## 运行环境与自测
 
-解压发布包，将整个 `plan-to-cad` 文件夹放入 `~/.codex/skills/`，保留其中的 `assets`、`references` 和 `scripts`，再打开一个新的 Codex 会话。
-
-后台生成和复开 DWG 已在 macOS、Python 3.12、已授权的 AutoCAD 2025 for Mac 上验证。第一次使用时，可让 Codex 按技能目录的 `requirements.txt` 配置 Python 环境。如果想手动跑一份合成示例，在技能目录执行以下命令。
+后台生成和复开 DWG 已在 macOS、Python 3.12 和已授权的 AutoCAD 2025 for Mac 上验证。第一次使用时，可以直接告诉 Codex「请帮我检查 AutoCAD 能否在本机保存并复开 DWG，再按技能的 `requirements.txt` 配置 Python 环境」。如果想手动跑一份合成示例，在技能目录执行以下命令。
 
 ```sh
 python3 -m venv .venv
